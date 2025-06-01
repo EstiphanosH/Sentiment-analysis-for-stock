@@ -1,0 +1,16 @@
+pandas
+matplotlib
+mplfinance
+seaborn
+nltk
+wordcloud
+scikit-learn
+ipython
+yfinance
+pandas-datareader
+#TA-Lib
+pfolio
+textblob
+statsmodels
+numpy
+requests
