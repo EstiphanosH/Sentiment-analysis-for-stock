@@ -1,50 +1,50 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import os
+from dateutil.parser import parse
+
+# Try importing interactive widgets and display
 try:
     from ipywidgets import interact, widgets
     from IPython.display import display, clear_output
+    _interactive_available = True
 except ImportError:
-    print("⚠️ Warning: ipywidgets or IPython not available. Interactive features will be disabled.")
-    # Create dummy functions to prevent errors
+    print("⚠️ ipywidgets or IPython not available. Interactive features will be disabled.")
+    _interactive_available = False
     def interact(*args, **kwargs): pass
-    def display(*args, **kwargs): pass
+    def display(obj): print(obj)
     def clear_output(*args, **kwargs): pass
-    widgets = type('Widgets', (), {'Dropdown': lambda *args, **kwargs: None})()
-
-from dateutil.parser import parse
-import os
+    class DummyWidgets:
+        def Dropdown(self, *args, **kwargs): return None
+        def HBox(self, *args, **kwargs): return None
+        def interactive_output(self, *args, **kwargs): return None
+    widgets = DummyWidgets()
 
 class InteractiveDataAnalyzer:
-    def __init__(self, df):
-        """
-        Initialize the analyzer with a DataFrame.
-        
-        Parameters:
-        -----------
-        df : pd.DataFrame
-            Input DataFrame to analyze
-        """
+    def __init__(self, df, save_dir=None):
         self.df = df.copy()
         self.numeric_cols = []
         self.datetime_cols = []
         self.categorical_cols = []
+        self.save_dir = save_dir
         self._initialize_columns()
         self._convert_dtypes()
+        if self.save_dir and not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir, exist_ok=True)
 
     def _is_date(self, string):
         try:
             parse(string, fuzzy=False)
             return True
-        except:
+        except Exception:
             return False
 
     def _initialize_columns(self):
         self.numeric_cols = self.df.select_dtypes(include=np.number).columns.tolist()
         self.datetime_cols = []
         self.categorical_cols = []
-
         for col in self.df.columns:
             if col in self.numeric_cols:
                 continue
@@ -55,7 +55,7 @@ class InteractiveDataAnalyzer:
                     self.datetime_cols.append(col)
                 else:
                     self.categorical_cols.append(col)
-            except:
+            except Exception:
                 self.categorical_cols.append(col)
 
     def _convert_dtypes(self):
@@ -66,11 +66,9 @@ class InteractiveDataAnalyzer:
                         lambda x: parse(x, fuzzy=True) if pd.notna(x) else pd.NaT
                     )
                 elif pd.api.types.is_numeric_dtype(self.df[col]):
-                    self.df[col] = pd.to_numeric(self.df[col], downcast='float' 
-                                                 if np.issubdtype(self.df[col].dtype, np.floating) 
-                                                 else 'integer')
+                    self.df[col] = pd.to_numeric(self.df[col])
             except Exception as e:
-                print(f"⚠️ Failed to convert column '{col}' to datetime: {e}")
+                print(f"⚠️ Failed to convert column '{col}': {e}")
 
     def display_head(self, n=5):
         display(self.df.head(n))
@@ -89,10 +87,15 @@ class InteractiveDataAnalyzer:
 
     def describe_numeric(self):
         print("\nDescriptive statistics for numeric columns:")
-        display(self.df[self.numeric_cols].describe())
+        if self.numeric_cols:
+            display(self.df[self.numeric_cols].describe())
+        else:
+            print("No numeric columns found.")
 
     def describe_categorical(self):
         print("\nTop categories per categorical column:")
+        if not self.categorical_cols:
+            print("No categorical columns found.")
         for col in self.categorical_cols:
             print(f"\nColumn: {col}")
             display(self.df[col].value_counts().head(10))
@@ -103,9 +106,13 @@ class InteractiveDataAnalyzer:
         result = pd.DataFrame({'Missing Values': missing, 'Percent (%)': missing_percent})
         result = result[result['Missing Values'] > 0].sort_values(by='Percent (%)', ascending=False)
         print("\nMissing Value Summary:")
-        display(result)
+        if not result.empty:
+            display(result)
+        else:
+            print("No missing values.")
 
-    def plot_distribution(self, column):
+    def plot_distribution(self, column, save=False):
+        fig = None
         if column in self.numeric_cols:
             fig = px.histogram(self.df, x=column, nbins=30, title=f"Distribution of {column}")
         elif column in self.categorical_cols:
@@ -115,40 +122,71 @@ class InteractiveDataAnalyzer:
             print(f"Column {column} is not numeric or categorical.")
             return
         fig.show()
+        if save and self.save_dir:
+            out_path = os.path.join(self.save_dir, f"distribution_{column}.png")
+            fig.write_image(out_path)
+            print(f"Saved: {out_path}")
 
-    def plot_timeseries(self, time_col, value_col):
+    def plot_timeseries(self, time_col, value_col, save=False):
         if time_col not in self.datetime_cols or value_col not in self.numeric_cols:
             print("Invalid column types for timeseries plot.")
             return
         fig = px.line(self.df.sort_values(time_col), x=time_col, y=value_col, title=f"{value_col} over Time")
         fig.show()
+        if save and self.save_dir:
+            out_path = os.path.join(self.save_dir, f"timeseries_{time_col}_{value_col}.png")
+            fig.write_image(out_path)
+            print(f"Saved: {out_path}")
 
-    def plot_scatter(self, x_col, y_col):
+    def plot_scatter(self, x_col, y_col, save=False):
+        if x_col == y_col:
+            print("❌ X and Y columns must be different for scatter plot.")
+            return
         if x_col in self.numeric_cols and y_col in self.numeric_cols:
             fig = px.scatter(self.df, x=x_col, y=y_col, trendline="ols", title=f"Scatter: {x_col} vs {y_col}")
             fig.show()
+            if save and self.save_dir:
+                out_path = os.path.join(self.save_dir, f"scatter_{x_col}_{y_col}.png")
+                fig.write_image(out_path)
+                print(f"Saved: {out_path}")
         else:
             print("Both x and y columns must be numeric.")
 
-    def plot_boxplots(self):
+    def plot_boxplots(self, save=False):
         for col in self.numeric_cols:
             fig = px.box(self.df, y=col, title=f"Boxplot for {col}")
             fig.show()
+            if save and self.save_dir:
+                out_path = os.path.join(self.save_dir, f"boxplot_{col}.png")
+                fig.write_image(out_path)
+                print(f"Saved: {out_path}")
 
-    def plot_correlation_matrix(self):
+    def plot_correlation_matrix(self, save=False):
         if len(self.numeric_cols) < 2:
             print("Not enough numeric columns for correlation matrix.")
             return
         corr = self.df[self.numeric_cols].corr()
         fig = px.imshow(corr, text_auto=True, title="Correlation Matrix")
         fig.show()
+        if save and self.save_dir:
+            out_path = os.path.join(self.save_dir, "correlation_matrix.png")
+            fig.write_image(out_path)
+            print(f"Saved: {out_path}")
 
     def interactive_distribution_plot(self):
+        if not _interactive_available:
+            print("Interactive widgets not available.")
+            return
         dropdown = widgets.Dropdown(options=self.numeric_cols + self.categorical_cols,
-                                    description='Select Column:')
-        interact(self.plot_distribution, column=dropdown)
+                                   description='Select Column:')
+        def plot_and_save(column):
+            self.plot_distribution(column, save=True)
+        interact(plot_and_save, column=dropdown)
 
     def interactive_timeseries_plot(self):
+        if not _interactive_available:
+            print("Interactive widgets not available.")
+            return
         if not self.datetime_cols or not self.numeric_cols:
             print("No suitable datetime or numeric columns for timeseries plot.")
             return
@@ -157,12 +195,15 @@ class InteractiveDataAnalyzer:
         ui = widgets.HBox([time_dropdown, value_dropdown])
 
         def update_plot(time_col, value_col):
-            self.plot_timeseries(time_col, value_col)
+            self.plot_timeseries(time_col, value_col, save=True)
 
         out = widgets.interactive_output(update_plot, {'time_col': time_dropdown, 'value_col': value_dropdown})
         display(ui, out)
 
     def interactive_scatter_plot(self):
+        if not _interactive_available:
+            print("Interactive widgets not available.")
+            return
         if len(self.numeric_cols) < 2:
             print("Not enough numeric columns for scatter plot.")
             return
@@ -171,19 +212,28 @@ class InteractiveDataAnalyzer:
         ui = widgets.HBox([x_dropdown, y_dropdown])
 
         def update_plot(x_col, y_col):
-            self.plot_scatter(x_col, y_col)
+            if x_col == y_col:
+                print("❌ X and Y columns must be different for scatter plot.")
+                return
+            self.plot_scatter(x_col, y_col, save=True)
 
         out = widgets.interactive_output(update_plot, {'x_col': x_dropdown, 'y_col': y_dropdown})
         display(ui, out)
 
     def interactive_summary(self):
+        print("DataFrame shape:", self.df.shape)
+        print("\nFirst 5 rows:")
+        display(self.df.head())
+        print("\nDataFrame info:")
+        buf = []
+        self.df.info(buf=buf)
+        print('\n'.join(buf) if buf else self.df.info())
         self.show_column_summary()
-        self.display_head()
         self.describe_numeric()
         self.describe_categorical()
         self.missing_values_summary()
-        self.plot_boxplots()
-        self.plot_correlation_matrix()
+        self.plot_boxplots(save=True)
+        self.plot_correlation_matrix(save=True)
         self.interactive_distribution_plot()
         self.interactive_timeseries_plot()
         self.interactive_scatter_plot()
@@ -191,21 +241,16 @@ class InteractiveDataAnalyzer:
 if __name__ == '__main__':
     # Example usage
     try:
-        # Load sample data
-        data_path = '../data/raw/historical/AAPL_historical_data.csv'
+        data_path = os.path.join('..', 'data', 'raw', 'historical', 'AAPL_historical_data.csv')
+        save_dir = os.path.join('..', 'eda_reports', 'AAPL')
         if os.path.exists(data_path):
             df = pd.read_csv(data_path)
             print("✅ Successfully loaded AAPL data")
-            
-            # Initialize analyzer
-            analyzer = InteractiveDataAnalyzer(df)
-            
-            # Run interactive analysis
+            analyzer = InteractiveDataAnalyzer(df, save_dir=save_dir)
             analyzer.interactive_summary()
         else:
             print(f"⚠️ Warning: Sample data file not found at {data_path}")
             print("Please provide a valid DataFrame to use this analyzer.")
-            
     except Exception as e:
         print(f"❌ Error in main execution: {str(e)}")
-        raise  # Re-raise the exception for debugging 
+        raise
