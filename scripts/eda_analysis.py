@@ -1,9 +1,9 @@
+import os
+import io
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import os
-from dateutil.parser import parse
 
 # Try importing interactive widgets and display
 try:
@@ -11,7 +11,7 @@ try:
     from IPython.display import display, clear_output
     _interactive_available = True
 except ImportError:
-    print("⚠️ ipywidgets or IPython not available. Interactive features will be disabled.")
+    print("ipywidgets or IPython not available. Interactive features will be disabled.")
     _interactive_available = False
     def interact(*args, **kwargs): pass
     def display(obj): print(obj)
@@ -23,52 +23,25 @@ except ImportError:
     widgets = DummyWidgets()
 
 class InteractiveDataAnalyzer:
+    """
+    General EDA for tabular (stock) and news/text data.
+    """
     def __init__(self, df, save_dir=None):
         self.df = df.copy()
-        self.numeric_cols = []
-        self.datetime_cols = []
-        self.categorical_cols = []
-        self.save_dir = save_dir
-        self._initialize_columns()
-        self._convert_dtypes()
-        if self.save_dir and not os.path.exists(self.save_dir):
+        self.save_dir = save_dir or "eda_reports"
+        if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir, exist_ok=True)
-
-    def _is_date(self, string):
-        try:
-            parse(string, fuzzy=False)
-            return True
-        except Exception:
-            return False
-
-    def _initialize_columns(self):
         self.numeric_cols = self.df.select_dtypes(include=np.number).columns.tolist()
-        self.datetime_cols = []
-        self.categorical_cols = []
+        self.categorical_cols = self.df.select_dtypes(include='object').columns.tolist()
+        self.datetime_cols = self.df.select_dtypes(include='datetime').columns.tolist()
+        # Try to parse any date columns
         for col in self.df.columns:
-            if col in self.numeric_cols:
-                continue
-            try:
-                sample = self.df[col].dropna().astype(str).sample(min(20, len(self.df[col]))).tolist()
-                parsed_count = sum([self._is_date(x) for x in sample])
-                if parsed_count / len(sample) >= 0.7:
+            if 'date' in col.lower() and col not in self.datetime_cols:
+                try:
+                    self.df[col] = pd.to_datetime(self.df[col], errors='coerce')
                     self.datetime_cols.append(col)
-                else:
-                    self.categorical_cols.append(col)
-            except Exception:
-                self.categorical_cols.append(col)
-
-    def _convert_dtypes(self):
-        for col in self.df.columns:
-            try:
-                if col in self.datetime_cols:
-                    self.df[col] = self.df[col].astype(str).apply(
-                        lambda x: parse(x, fuzzy=True) if pd.notna(x) else pd.NaT
-                    )
-                elif pd.api.types.is_numeric_dtype(self.df[col]):
-                    self.df[col] = pd.to_numeric(self.df[col])
-            except Exception as e:
-                print(f"⚠️ Failed to convert column '{col}': {e}")
+                except Exception:
+                    pass
 
     def display_head(self, n=5):
         display(self.df.head(n))
@@ -173,6 +146,83 @@ class InteractiveDataAnalyzer:
             fig.write_image(out_path)
             print(f"Saved: {out_path}")
 
+    def plot_headline_length(self, save=False):
+        if 'headline' in self.df.columns:
+            self.df['headline_length'] = self.df['headline'].astype(str).apply(len)
+            fig = px.histogram(self.df, x='headline_length', nbins=30, title='Headline Length Distribution')
+            fig.show()
+            if save and self.save_dir:
+                out_path = os.path.join(self.save_dir, "headline_length_dist.png")
+                fig.write_image(out_path)
+                print(f"Saved: {out_path}")
+
+    def plot_publishers(self, save=False):
+        if 'publisher' in self.df.columns:
+            fig = px.bar(self.df['publisher'].value_counts().head(20).reset_index(),
+                         x='index', y='publisher', title='Top 20 Publishers',
+                         labels={'index': 'Publisher', 'publisher': 'Article Count'})
+            fig.show()
+            if save and self.save_dir:
+                out_path = os.path.join(self.save_dir, "top_publishers.png")
+                fig.write_image(out_path)
+                print(f"Saved: {out_path}")
+
+    def plot_publication_dates(self, save=False):
+        if 'date' in self.df.columns:
+            self.df['date'] = pd.to_datetime(self.df['date'], errors='coerce')
+            self.df['date_only'] = self.df['date'].dt.date
+            pub_counts = self.df.groupby('date_only').size()
+            fig = px.line(pub_counts, title='Articles Published per Day')
+            fig.show()
+            if save and self.save_dir:
+                out_path = os.path.join(self.save_dir, "articles_per_day.png")
+                fig.write_image(out_path)
+                print(f"Saved: {out_path}")
+
+    def plot_publish_times(self, save=False):
+        if 'date' in self.df.columns:
+            self.df['hour'] = pd.to_datetime(self.df['date'], errors='coerce').dt.hour
+            fig = px.histogram(self.df, x='hour', nbins=24, title='Articles by Hour of Day')
+            fig.show()
+            if save and self.save_dir:
+                out_path = os.path.join(self.save_dir, "articles_by_hour.png")
+                fig.write_image(out_path)
+                print(f"Saved: {out_path}")
+
+    def plot_publisher_domains(self, save=False):
+        if 'publisher' in self.df.columns and self.df['publisher'].str.contains('@').any():
+            self.df['domain'] = self.df['publisher'].str.extract(r'@([\w\.-]+)')
+            fig = px.bar(self.df['domain'].value_counts().head(10).reset_index(),
+                         x='index', y='domain', title='Top 10 Publisher Domains',
+                         labels={'index': 'Domain', 'domain': 'Article Count'})
+            fig.show()
+            if save and self.save_dir:
+                out_path = os.path.join(self.save_dir, "top_publisher_domains.png")
+                fig.write_image(out_path)
+                print(f"Saved: {out_path}")
+
+    def plot_headline_keywords(self, save=False):
+        if 'headline' in self.df.columns:
+            from sklearn.feature_extraction.text import CountVectorizer
+            vectorizer = CountVectorizer(stop_words='english', max_features=20)
+            X = vectorizer.fit_transform(self.df['headline'].astype(str))
+            keywords = vectorizer.get_feature_names_out()
+            freqs = X.sum(axis=0).A1
+            keyword_freq = dict(zip(keywords, freqs))
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            plt.figure(figsize=(8, 6))
+            sns.barplot(x=list(keyword_freq.values()), y=list(keyword_freq.keys()))
+            plt.title('Top 20 Keywords in Headlines')
+            plt.xlabel('Frequency')
+            plt.tight_layout()
+            plt.show()
+            if save and self.save_dir:
+                out_path = os.path.join(self.save_dir, "headline_keywords.png")
+                plt.savefig(out_path)
+                print(f"Saved: {out_path}")
+                plt.close()
+
     def interactive_distribution_plot(self):
         if not _interactive_available:
             print("Interactive widgets not available.")
@@ -190,15 +240,19 @@ class InteractiveDataAnalyzer:
         if not self.datetime_cols or not self.numeric_cols:
             print("No suitable datetime or numeric columns for timeseries plot.")
             return
-        time_dropdown = widgets.Dropdown(options=self.datetime_cols, description='Datetime:')
+        # Fix the first datetime column as the time axis
+        time_col = self.datetime_cols[0]
         value_dropdown = widgets.Dropdown(options=self.numeric_cols, description='Value:')
-        ui = widgets.HBox([time_dropdown, value_dropdown])
+        ui = widgets.HBox([widgets.Label(f"Time: {time_col}"), value_dropdown])
 
-        def update_plot(time_col, value_col):
+        def update_plot(value_col):
             self.plot_timeseries(time_col, value_col, save=True)
 
-        out = widgets.interactive_output(update_plot, {'time_col': time_dropdown, 'value_col': value_dropdown})
-        display(ui, out)
+        value_dropdown.observe(lambda change: update_plot(value_dropdown.value), names='value')
+
+        display(ui)
+        # Initial plot
+        update_plot(value_dropdown.value)
 
     def interactive_scatter_plot(self):
         if not _interactive_available:
@@ -211,23 +265,35 @@ class InteractiveDataAnalyzer:
         y_dropdown = widgets.Dropdown(options=self.numeric_cols, description='Y Axis:')
         ui = widgets.HBox([x_dropdown, y_dropdown])
 
-        def update_plot(x_col, y_col):
+        def update_plot(*args):
+            x_col = x_dropdown.value
+            y_col = y_dropdown.value
             if x_col == y_col:
                 print("❌ X and Y columns must be different for scatter plot.")
                 return
             self.plot_scatter(x_col, y_col, save=True)
 
-        out = widgets.interactive_output(update_plot, {'x_col': x_dropdown, 'y_col': y_dropdown})
-        display(ui, out)
+        x_dropdown.observe(update_plot, names='value')
+        y_dropdown.observe(update_plot, names='value')
 
-    def interactive_summary(self):
+        display(ui)
+        update_plot()
+
+    def interactive_summary(self, save_pdf: bool = False, pdf_path: str = None):
+        """
+        Display interactive summary. Optionally save summary as a PDF file.
+        """
+        import io
+        import matplotlib.pyplot as plt
+
         print("DataFrame shape:", self.df.shape)
         print("\nFirst 5 rows:")
         display(self.df.head())
         print("\nDataFrame info:")
-        buf = []
+        buf = io.StringIO()
         self.df.info(buf=buf)
-        print('\n'.join(buf) if buf else self.df.info())
+        info_str = buf.getvalue()
+        print(info_str)
         self.show_column_summary()
         self.describe_numeric()
         self.describe_categorical()
@@ -238,19 +304,78 @@ class InteractiveDataAnalyzer:
         self.interactive_timeseries_plot()
         self.interactive_scatter_plot()
 
-if __name__ == '__main__':
-    # Example usage
-    try:
-        data_path = os.path.join('..', 'data', 'raw', 'historical', 'AAPL_historical_data.csv')
-        save_dir = os.path.join('..', 'eda_reports', 'AAPL')
-        if os.path.exists(data_path):
-            df = pd.read_csv(data_path)
-            print("✅ Successfully loaded AAPL data")
-            analyzer = InteractiveDataAnalyzer(df, save_dir=save_dir)
-            analyzer.interactive_summary()
-        else:
-            print(f"⚠️ Warning: Sample data file not found at {data_path}")
-            print("Please provide a valid DataFrame to use this analyzer.")
-    except Exception as e:
-        print(f"❌ Error in main execution: {str(e)}")
-        raise
+        # News-specific EDA if columns exist
+        self.plot_headline_length(save=True)
+        self.plot_publishers(save=True)
+        self.plot_publication_dates(save=True)
+        self.plot_publish_times(save=True)
+        self.plot_publisher_domains(save=True)
+        self.plot_headline_keywords(save=True)
+
+        if save_pdf:
+            from matplotlib.backends.backend_pdf import PdfPages
+            if pdf_path is None:
+                pdf_path = "../reports/pdfs/eda_summary.pdf"
+
+            # Save textual summary to a temporary file
+            text_summary = io.StringIO()
+            text_summary.write(f"DataFrame shape: {self.df.shape}\n\n")
+            text_summary.write("First 5 rows:\n")
+            text_summary.write(self.df.head().to_string())
+            text_summary.write("\n\nDataFrame info:\n")
+            text_summary.write(info_str)
+            text_summary.write("\n\nNumeric Columns:\n")
+            text_summary.write(str(self.numeric_cols))
+            text_summary.write("\n\nDatetime Columns:\n")
+            text_summary.write(str(self.datetime_cols))
+            text_summary.write("\n\nCategorical Columns:\n")
+            text_summary.write(str(self.categorical_cols))
+            text_summary.write("\n\nDescriptive statistics for numeric columns:\n")
+            if self.numeric_cols:
+                text_summary.write(str(self.df[self.numeric_cols].describe()))
+            else:
+                text_summary.write("No numeric columns found.")
+            text_summary.write("\n\nTop categories per categorical column:\n")
+            if not self.categorical_cols:
+                text_summary.write("No categorical columns found.")
+            for col in self.categorical_cols:
+                text_summary.write(f"\nColumn: {col}\n")
+                text_summary.write(str(self.df[col].value_counts().head(10)))
+            text_summary.write("\n\nMissing Value Summary:\n")
+            missing = self.df.isnull().sum()
+            missing_percent = (missing / len(self.df)) * 100
+            result = pd.DataFrame({'Missing Values': missing, 'Percent (%)': missing_percent})
+            result = result[result['Missing Values'] > 0].sort_values(by='Percent (%)', ascending=False)
+            if not result.empty:
+                text_summary.write(str(result))
+            else:
+                text_summary.write("No missing values.")
+
+            # Create a PDF and add the text summary as a page
+            with PdfPages(pdf_path) as pdf:
+                # Text summary as a figure
+                fig, ax = plt.subplots(figsize=(8.5, 11))
+                ax.axis('off')
+                txt = text_summary.getvalue()
+                ax.text(0, 1, txt, fontsize=8, va='top', family='monospace')
+                pdf.savefig(fig, bbox_inches='tight')
+                plt.close(fig)
+
+                # Save all PNG plots in save_dir to the PDF
+                if self.save_dir and os.path.exists(self.save_dir):
+                    import glob
+                    for img_path in glob.glob(os.path.join(self.save_dir, "*.png")):
+                        img = plt.imread(img_path)
+                        fig, ax = plt.subplots(figsize=(8.5, 6))
+                        ax.imshow(img)
+                        ax.axis('off')
+                        pdf.savefig(fig, bbox_inches='tight')
+                        plt.close(fig)
+            print(f"PDF summary saved to {pdf_path}")
+
+# Usage in notebook:
+# from scripts.eda_analysis import InteractiveDataAnalyzer
+# analyzer = InteractiveDataAnalyzer(dataframes['AAPL_historical_data'])
+# analyzer.interactive_summary(save_pdf=True, pdf_path="eda_aapl.pdf")
+# analyzer = InteractiveDataAnalyzer(dataframes['raw_analyst_ratings'])
+# analyzer.interactive_summary(save_pdf=True, pdf_path="eda_news.pdf")

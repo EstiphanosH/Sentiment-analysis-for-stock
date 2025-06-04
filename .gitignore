@@ -23,3 +23,5 @@ data/
 
 # MacOS system files (optional)
 .DS_Store
+
+nltk_data/

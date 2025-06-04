@@ -1,16 +1,56 @@
-pandas
-matplotlib
-mplfinance
-seaborn
-nltk
-wordcloud
-scikit-learn
-ipython
-yfinance
-pandas-datareader
-#TA-Lib
-pfolio
-textblob
-statsmodels
+# Core data science packages
 numpy
-requests
+pandas
+scikit-learn
+
+# Financial Analysis
+yfinance
+TA-Lib
+pyfolio
+pandas-ta
+pynance
+
+# Time series analysis
+statsmodels
+pmdarima
+
+# Natural Language Processing
+nltk
+textblob
+
+# Visualization and Notebooks
+matplotlib
+plotly
+ipywidgets
+nbformat
+
+# Jupyter Environment
+jupyter
+jupyter-client
+jupyter-core
+jupyter-server
+jupyterlab
+jupyterlab-widgets
+notebook
+ipykernel
+jupyter-contrib-nbextensions
+jupyter-nbextensions-configurator
+
+# Utilities
+tqdm
+python-dateutil
+
+# Dependencies for pyfolio
+scipy
+seaborn
+empyrical
+
+# Optional: Interactive Plotting Extensions
+plotly-express
+cufflinks
+chart-studio
+
+# Deep Learning (optional, if needed)
+# tensorflow==2.13.0
+# torch==2.0.1
+setuptools<81
