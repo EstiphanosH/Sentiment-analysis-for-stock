@@ -1,4 +1,4 @@
- 📈 Sentiment Analysis for Stock Market Prediction
+# 📈 Sentiment Analysis for Stock Market Prediction
 
 This project aims to analyze the sentiment of financial news articles to predict stock market movements. By leveraging Natural Language Processing (NLP) techniques, the system evaluates the sentiment of news headlines and correlates them with stock price trends.
 
