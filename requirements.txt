@@ -5,7 +5,7 @@ scikit-learn
 
 # Financial Analysis
 yfinance
-#TA-Lib
+TA-Lib
 pyfolio
 pandas-ta
 pynance
