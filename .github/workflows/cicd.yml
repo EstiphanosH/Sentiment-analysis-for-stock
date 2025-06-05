@@ -27,5 +27,4 @@ jobs:
           
           pip install -r requirements.txt
 
-      - name: Show Python version
-        run: python --version
+     
